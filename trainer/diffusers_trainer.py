@@ -576,7 +576,7 @@ class AspectDataset(torch.utils.data.Dataset):
                 else:
                     for i, x in enumerate(input_ids):
                         input_ids[i] = [self.tokenizer.bos_token_id, *x, *np.full((self.tokenizer.model_max_length - len(x) - 1), self.tokenizer.eos_token_id)]
-                    if args.clip_penultimate:    
+                    if args.clip_penultimate:
                         input_ids = self.text_encoder.text_model.final_layer_norm(self.text_encoder(torch.asarray(input_ids).to(self.device), output_hidden_states=True)['hidden_states'][-2])
                     else:
                         input_ids = self.text_encoder(torch.asarray(input_ids).to(self.device), output_hidden_states=True).last_hidden_state
@@ -682,7 +682,7 @@ def main():
 
     if rank == 0:
         os.makedirs(args.output_path, exist_ok=True)
-        
+
         mode = 'disabled'
         if args.enablewandb:
             mode = 'online'
@@ -728,7 +728,7 @@ def main():
 
     if args.resume:
         args.model = args.resume
-    
+
     tokenizer = CLIPTokenizer.from_pretrained(args.model, subfolder='tokenizer', use_auth_token=args.hf_token)
     text_encoder = CLIPTextModel.from_pretrained(args.model, subfolder='text_encoder', use_auth_token=args.hf_token)
     vae = AutoencoderKL.from_pretrained(args.model, subfolder='vae', use_auth_token=args.hf_token)
@@ -829,7 +829,7 @@ def main():
         num_workers=0,
         collate_fn=dataset.collate_fn
     )
-    
+
     # Migrate dataset
     if args.resize and not args.no_migration:
         for _, batch in enumerate(train_dataloader):
@@ -883,6 +883,7 @@ def main():
     try:
         loss = torch.tensor(0.0, device=device, dtype=weight_dtype)
         for epoch in range(args.epochs):
+            all_loss = 0
             unet.train()
             if args.train_text_encoder:
                 text_encoder.train()
@@ -892,7 +893,7 @@ def main():
                         progress_bar.update(1)
                     global_step += 1
                     continue
-                
+
                 b_start = time.perf_counter()
                 latents = vae.encode(batch['pixel_values'].to(device, dtype=weight_dtype)).latent_dist.sample()
                 latents = latents * 0.18215
@@ -923,7 +924,7 @@ def main():
                         # Predict the noise residual and compute loss
                         with torch.autocast('cuda', enabled=args.fp16):
                             noise_pred = unet(noisy_latents, timesteps, encoder_hidden_states).sample
-                            
+
                         loss = torch.nn.functional.mse_loss(noise_pred.float(), target.float(), reduction="mean")
 
                         # backprop and update
@@ -938,7 +939,7 @@ def main():
                         # Predict the noise residual and compute loss
                         with torch.autocast('cuda', enabled=args.fp16):
                             noise_pred = unet(noisy_latents, timesteps, encoder_hidden_states).sample
-                            
+
                         loss = torch.nn.functional.mse_loss(noise_pred.float(), target.float(), reduction="mean")
 
                         # backprop and update
@@ -948,7 +949,7 @@ def main():
                         scaler.step(optimizer)
                         scaler.update()
                         lr_scheduler.step()
-                        optimizer.zero_grad()                    
+                        optimizer.zero_grad()
 
                 # Update EMA
                 if args.use_ema:
@@ -966,6 +967,7 @@ def main():
                 torch.distributed.all_reduce(loss, op=torch.distributed.ReduceOp.SUM)
                 loss = loss / world_size
 
+                all_loss = all_loss + loss.detach().item()
                 if rank == 0:
                     progress_bar.update(1)
                     global_step += 1
@@ -983,6 +985,10 @@ def main():
 
                 if global_step % args.save_steps == 0 and global_step > 0:
                     save_checkpoint(global_step)
+                    f = open(args.output_path+"loss-"+str(epoch), 'w')
+                    f.write(str(all_loss))
+                    f.close
+
                 if args.enableinference:
                     if global_step % args.image_log_steps == 0 and global_step > 0:
                         if rank == 0:
