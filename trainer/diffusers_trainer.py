@@ -985,7 +985,7 @@ def main():
 
                 if global_step % args.save_steps == 0 and global_step > 0:
                     save_checkpoint(global_step)
-                    f = open(args.output_path+"loss-"+str(epoch)+".txt", 'w')
+                    f = open(args.output_path+"/loss-"+str(epoch)+".txt", 'w')
                     f.write(str(all_loss))
                     f.close
 
