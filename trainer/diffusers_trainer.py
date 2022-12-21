@@ -985,9 +985,9 @@ def main():
 
                 if global_step % args.save_steps == 0 and global_step > 0:
                     save_checkpoint(global_step)
-                    f = open(args.output_path+"/loss-"+str(epoch)+".txt", 'w')
-                    f.write(str(all_loss))
-                    f.close
+                    loss_file = open(args.output_path+"/loss-"+str(epoch)+".txt", 'w')
+                    loss_file.write(str(all_loss))
+                    loss_file.close()
 
                 if args.enableinference:
                     if global_step % args.image_log_steps == 0 and global_step > 0:
